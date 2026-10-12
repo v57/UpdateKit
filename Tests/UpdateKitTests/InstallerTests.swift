@@ -1,13 +1,13 @@
 import XCTest
 
-@testable import AppUpdater
+@testable import UpdateKit
 
 final class InstallerTests: XCTestCase {
   private var folder: URL!
 
   override func setUp() async throws {
     folder = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "AppUpdaterTests-\(UUID().uuidString)")
+      "UpdateKitTests-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
   }
 

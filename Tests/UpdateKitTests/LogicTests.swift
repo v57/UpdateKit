@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import AppUpdater
+@testable import UpdateKit
 
 final class VersionTests: XCTestCase {
   func testNumericOrdering() {

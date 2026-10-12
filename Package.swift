@@ -3,9 +3,9 @@
 import PackageDescription
 
 let package = Package(
-  name: "AppUpdater", platforms: [.macOS(.v12)],
-  products: [.library(name: "AppUpdater", targets: ["AppUpdater"])],
+  name: "UpdateKit", platforms: [.macOS(.v12)],
+  products: [.library(name: "UpdateKit", targets: ["UpdateKit"])],
   targets: [
-    .target(name: "AppUpdater"),
-    .testTarget(name: "AppUpdaterTests", dependencies: ["AppUpdater"]),
+    .target(name: "UpdateKit"),
+    .testTarget(name: "UpdateKitTests", dependencies: ["UpdateKit"]),
   ])
