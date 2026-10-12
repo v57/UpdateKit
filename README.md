@@ -1,4 +1,4 @@
-# AppUpdater
+# UpdateKit
 
 In-app updates for Mac apps distributed outside the App Store, as a small Swift package (no
 frameworks to embed, about 0.25 MB in the app). The app names where its releases are published; the
@@ -6,7 +6,7 @@ library reads everything else from the app, picks the installation method that t
 allows, and brings its own update window and menu items.
 
 ```swift
-import AppUpdater
+import UpdateKit
 
 @main struct MyApp: App {
   private let updater = AppUpdater(github: "owner/MyApp")
