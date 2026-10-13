@@ -66,6 +66,34 @@ final class GitHubReleasesTests: XCTestCase {
     XCTAssertNil(GitHubReleases.pickAsset(["readme.md"], appName: "Player", assetName: nil))
   }
 
+  func testNewestReleaseWithTheAssetSkipsOtherReleases() {
+    func release(_ tag: String, _ assets: [String], draft: Bool = false, prerelease: Bool = false)
+      -> GitHubReleases.Release
+    {
+      GitHubReleases.Release(
+        tagName: tag, name: nil, body: nil, htmlURL: URL(string: "https://x")!, draft: draft,
+        prerelease: prerelease, publishedAt: nil,
+        assets: assets.map {
+          .init(name: $0, browserDownloadURL: URL(string: "https://x/\($0)")!, size: 1)
+        })
+    }
+    // Newest first, as GitHub lists them.
+    let releases = [
+      release("v1.3", ["App.zip"], draft: true),
+      release("v1.2", ["App.zip"], prerelease: true),
+      release("duckdb-1.5.6", ["DuckDB.xcframework.zip"]),
+      release("v1.1", ["App.zip"]),
+    ]
+    func newest(_ includePrereleases: Bool, _ assetName: String?) -> String? {
+      GitHubReleases.newest(
+        in: releases, includePrereleases: includePrereleases, assetName: assetName)?.tagName
+    }
+    XCTAssertEqual(newest(false, "App.zip"), "v1.1")
+    XCTAssertEqual(newest(true, "App.zip"), "v1.2")
+    XCTAssertEqual(newest(true, nil), "v1.2")
+    XCTAssertNil(newest(false, "Missing.zip"))
+  }
+
   func testNoMatchingAssetIsAnError() throws {
     let release = GitHubReleases.Release(
       tagName: "v2", name: nil, body: nil, htmlURL: URL(string: "https://x")!, draft: false,

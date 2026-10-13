@@ -113,8 +113,11 @@ public struct GitHubReleases: UpdateSource {
 
   public func latestRelease(for app: AppInfo, includePrereleases: Bool) async throws -> AppRelease?
   {
-    // /releases/latest skips drafts and pre-releases; the list includes them.
-    let path = includePrereleases ? "releases?per_page=20" : "releases/latest"
+    // /releases/latest skips drafts and pre-releases; the list includes them. With an asset
+    // name the list is searched for the newest release that has it, since a repository may
+    // publish other things too (DatabasePro's library binaries are its "latest" release).
+    let searchesList = includePrereleases || assetName != nil
+    let path = searchesList ? "releases?per_page=20" : "releases/latest"
     var request = URLRequest(
       url: URL(string: "https://api.github.com/repos/\(owner)/\(repository)/\(path)")!,
       cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
@@ -126,13 +129,26 @@ public struct GitHubReleases: UpdateSource {
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     let release: Release?
-    if includePrereleases {
-      release = try decoder.decode([Release].self, from: data).first { !$0.draft }
+    if searchesList {
+      release = Self.newest(
+        in: try decoder.decode([Release].self, from: data), includePrereleases: includePrereleases,
+        assetName: assetName)
     } else {
       release = try decoder.decode(Release.self, from: data)
     }
     return try release.map {
       try Self.appRelease(from: $0, appName: app.name, assetName: assetName)
+    }
+  }
+
+  /// The first (newest) published release in GitHub's list, skipping pre-releases unless
+  /// included and, with `assetName`, releases without that asset.
+  static func newest(in releases: [Release], includePrereleases: Bool, assetName: String?)
+    -> Release?
+  {
+    releases.first { release in
+      !release.draft && (includePrereleases || !release.prerelease)
+        && (assetName.map { name in release.assets.contains { $0.name == name } } ?? true)
     }
   }
 
