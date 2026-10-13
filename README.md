@@ -11,7 +11,7 @@ import UpdateKit
 @main struct MyApp: App {
   private let updater = AppUpdater(github: "owner/MyApp")
 
-  init() { updater.start() }  // daily background checks
+  init() { updater.start() }  // daily checks, once the user turns them on
 
   var body: some Scene {
     WindowGroup { ContentView() }
@@ -22,6 +22,10 @@ import UpdateKit
 
 In an AppKit app, call `updater.start()` at launch and point a menu item at
 `#selector(AppUpdater.checkForUpdates(_:))` with the updater as its target.
+
+The app contacts the update server only when the user asks: automatic checks are off until the user
+turns on Check for Updates Automatically (in the menu or the update window), and nothing turns them
+on for them.
 
 ## What it reads from the app
 

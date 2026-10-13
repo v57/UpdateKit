@@ -8,7 +8,7 @@ import Foundation
 /// Downloads for a sandboxed app, or through the browser.
 ///
 ///     let updater = AppUpdater(github: "v57/Player")
-///     updater.start()                       // daily background checks
+///     updater.start()                       // daily checks, once the user turns them on
 ///     // SwiftUI: .commands { UpdaterCommands(updater: updater) }
 ///     // AppKit: a menu item with action #selector(AppUpdater.checkForUpdates(_:))
 ///
@@ -19,8 +19,6 @@ import Foundation
   public struct Configuration: Sendable {
     /// Time between background checks.
     public var checkInterval: TimeInterval = 24 * 60 * 60
-    /// Background checks before the user changes the setting.
-    public var checksAutomaticallyByDefault = true
     /// Offer pre-releases too.
     public var includesPrereleases = false
     public init() {}
@@ -54,7 +52,10 @@ import Foundation
     installMethod != .appStore && ProcessInfo.processInfo.environment["APP_UPDATER_DISABLED"] != "1"
   }
 
-  /// Background checks; persisted, shown as a menu toggle.
+  /// Background checks; persisted, shown as a menu toggle and in the update
+  /// window. Off until the user turns them on: an app never contacts the
+  /// update server without the user asking, so there is deliberately no
+  /// way to start with them on.
   @Published public var automaticallyChecksForUpdates: Bool {
     didSet { defaults.set(automaticallyChecksForUpdates, forKey: Keys.automatic) }
   }
@@ -97,8 +98,7 @@ import Foundation
       self.source = source
     }
     installMethod = InstallMethod.choose(for: .current(app: app))
-    automaticallyChecksForUpdates =
-      defaults.object(forKey: Keys.automatic) as? Bool ?? configuration.checksAutomaticallyByDefault
+    automaticallyChecksForUpdates = defaults.bool(forKey: Keys.automatic)
     super.init()
   }
 
@@ -113,8 +113,9 @@ import Foundation
 
   // MARK: - Checking
 
-  /// Starts background checks: one at launch if due, then whenever due while
-  /// the app runs. Call once, e.g. from the App's init or
+  /// Starts background checks, which only run once the user has turned on
+  /// `automaticallyChecksForUpdates`: one at launch if due, then whenever due
+  /// while the app runs. Call once, e.g. from the App's init or
   /// applicationDidFinishLaunching (the first check waits for the run loop).
   public func start() {
     guard isEnabled, timer == nil else { return }
