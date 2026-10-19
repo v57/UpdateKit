@@ -8,7 +8,7 @@ struct UpdateView: View {
 
   var body: some View {
     HStack(alignment: .top, spacing: 16) {
-      Image(nsImage: app.icon).resizable().frame(width: 64, height: 64)
+      icon.resizable().frame(width: 64, height: 64)
       VStack(alignment: .leading, spacing: 10) { content }.frame(
         maxWidth: .infinity, alignment: .leading)
     }.padding(20).frame(width: 560).fixedSize(horizontal: false, vertical: true)
@@ -53,10 +53,10 @@ struct UpdateView: View {
     case .saved(let release, let file):
       title("\(app.name) \(release.version) is downloaded")
       Text(
-        "It is in \(file.deletingLastPathComponent().lastPathComponent) as “\(file.lastPathComponent)”. Quit \(app.name), open the file and move the new \(app.name) to Applications, replacing the old one."
+        "It is in \(file.deletingLastPathComponent().lastPathComponent) as “\(file.lastPathComponent)”. \(installHint)"
       )
       buttons {
-        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+        Button("Show in \(Desktop.fileManagerName)") { Desktop.reveal(file) }
         Button("Done") { updater.close() }.keyboardShortcut(.defaultAction)
       }
     case .failed(let release, let message):
@@ -78,8 +78,8 @@ struct UpdateView: View {
         Text(markdown(notes)).textSelection(.enabled).frame(
           maxWidth: .infinity, alignment: .leading
         ).padding(8)
-      }.frame(height: 180).background(Color(nsColor: .textBackgroundColor)).overlay(
-        RoundedRectangle(cornerRadius: 4).stroke(Color(nsColor: .separatorColor)))
+      }.frame(height: 180).background(notesBackground).overlay(
+        RoundedRectangle(cornerRadius: 4).stroke(separator))
     }
     Toggle("Check for updates automatically", isOn: $updater.automaticallyChecksForUpdates).padding(
       .top, 4)
@@ -91,6 +91,38 @@ struct UpdateView: View {
         updater.install(release)
       }.keyboardShortcut(.defaultAction)
     }.padding(.top, 4)
+  }
+
+  private var icon: Image {
+    #if os(macOS)
+      Image(nsImage: app.icon)
+    #else
+      Image(systemName: "arrow.down.app")
+    #endif
+  }
+
+  private var notesBackground: Color {
+    #if os(macOS)
+      Color(nsColor: .textBackgroundColor)
+    #else
+      Color.primary.opacity(0.04)
+    #endif
+  }
+
+  private var separator: Color {
+    #if os(macOS)
+      Color(nsColor: .separatorColor)
+    #else
+      Color.primary.opacity(0.15)
+    #endif
+  }
+
+  private var installHint: String {
+    #if os(macOS)
+      "Quit \(app.name), open the file and move the new \(app.name) to Applications, replacing the old one."
+    #else
+      "Quit \(app.name), then unpack the file over the folder \(app.name) runs from."
+    #endif
   }
 
   private var methodText: String {

@@ -1,6 +1,9 @@
-import AppKit
 import Foundation
-import Security
+
+#if os(macOS)
+  import AppKit
+  import Security
+#endif
 
 /// Everything the updater needs to know about the running app, read from
 /// its bundle, code signature and entitlements: the app provides none of it.
@@ -49,30 +52,49 @@ public struct AppInfo: Sendable {
     let name =
       info["CFBundleDisplayName"] as? String ?? info["CFBundleName"] as? String
       ?? bundle.bundleURL.deletingPathExtension().lastPathComponent
-    let sandboxed =
-      Entitlements.bool("com.apple.security.app-sandbox")
-      ?? (ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil)
-    let receipt = bundle.appStoreReceiptURL.map { FileManager.default.fileExists(atPath: $0.path) }
+    #if os(macOS)
+      let sandboxed =
+        Entitlements.bool("com.apple.security.app-sandbox")
+        ?? (ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil)
+      let receipt = bundle.appStoreReceiptURL.map { FileManager.default.fileExists(atPath: $0.path) }
+      let team = CodeSignature.teamIdentifierOfRunningApp()
+    #else
+      // Off the Mac (Windows: an Info.plist next to the executable) there is no sandbox or store copy, and no
+      // signature the updater checks, so updates are saved for the user to install.
+      let sandboxed = false
+      let receipt: Bool? = nil
+      let team: String? = nil
+    #endif
     return AppInfo(
       name: name, bundleIdentifier: bundle.bundleIdentifier ?? "",
       version: info["CFBundleShortVersionString"] as? String ?? "0",
       build: info["CFBundleVersion"] as? String ?? "0", bundleURL: bundle.bundleURL,
-      teamIdentifier: CodeSignature.teamIdentifierOfRunningApp(), isSandboxed: sandboxed,
-      hasNetworkAccess: !sandboxed
-        || Entitlements.bool("com.apple.security.network.client") == true,
-      hasDownloadsAccess: !sandboxed
-        || Entitlements.bool("com.apple.security.files.downloads.read-write") == true,
+      teamIdentifier: team, isSandboxed: sandboxed,
+      hasNetworkAccess: !sandboxed || entitled("com.apple.security.network.client"),
+      hasDownloadsAccess: !sandboxed || entitled("com.apple.security.files.downloads.read-write"),
       isAppStoreBuild: receipt ?? false)
   }
 
-  /// The app icon, for the update window.
-  @MainActor public var icon: NSImage { NSWorkspace.shared.icon(forFile: bundleURL.path) }
+  private static func entitled(_ name: String) -> Bool {
+    #if os(macOS)
+      Entitlements.bool(name) == true
+    #else
+      false
+    #endif
+  }
+
+  #if os(macOS)
+    /// The app icon, for the update window.
+    @MainActor public var icon: NSImage { NSWorkspace.shared.icon(forFile: bundleURL.path) }
+  #endif
 }
 
-/// Entitlements of the running process.
-enum Entitlements {
-  static func bool(_ name: String) -> Bool? {
-    guard let task = SecTaskCreateFromSelf(nil) else { return nil }
-    return SecTaskCopyValueForEntitlement(task, name as CFString, nil) as? Bool
+#if os(macOS)
+  /// Entitlements of the running process.
+  enum Entitlements {
+    static func bool(_ name: String) -> Bool? {
+      guard let task = SecTaskCreateFromSelf(nil) else { return nil }
+      return SecTaskCopyValueForEntitlement(task, name as CFString, nil) as? Bool
+    }
   }
-}
+#endif

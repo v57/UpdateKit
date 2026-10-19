@@ -176,6 +176,22 @@ final class InstallMethodTests: XCTestCase {
 }
 
 final class ShellTests: XCTestCase {
+  func testWindowsAssetNameFollowsTheMacOne() {
+    #if os(Windows)
+      #if arch(arm64)
+        let arch = "arm64"
+      #else
+        let arch = "x64"
+      #endif
+      XCTAssertEqual(GitHubReleases.platformAssetName("Shell.zip", appName: "Shell"), "Shell-Windows-\(arch).zip")
+      XCTAssertEqual(GitHubReleases.platformAssetName(nil, appName: "Data Base"), "DataBase-Windows-\(arch).zip")
+    #else
+      XCTAssertEqual(GitHubReleases.platformAssetName("Shell.zip", appName: "Shell"), "Shell.zip")
+      XCTAssertNil(GitHubReleases.platformAssetName(nil, appName: "Shell"))
+    #endif
+  }
+
+  #if os(macOS)
   func testQuotedWordsSurviveTheShell() async throws {
     for text in ["plain", "with space", "it's", "a'b'c", "$HOME `x` \"q\" \\ ;|&"] {
       let result = try await Shell.run("/bin/sh", ["-c", "printf %s \(Shell.quote(text))"])
@@ -207,6 +223,7 @@ final class ShellTests: XCTestCase {
       #"identifier "dev.v57.player" and anchor apple generic and certificate leaf[subject.OU] = "AUCR797TMH""#
     )
   }
+  #endif
 }
 
 extension AppInfo {

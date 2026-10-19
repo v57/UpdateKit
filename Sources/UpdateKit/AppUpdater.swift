@@ -1,4 +1,3 @@
-import AppKit
 import Combine
 import Foundation
 
@@ -135,12 +134,18 @@ import Foundation
   /// "Check for Updates…": shows the result, including "up to date". When
   /// the app cannot check by itself (sandboxed without network access) it
   /// opens the releases page instead.
-  @objc public func checkForUpdates(_ sender: Any? = nil) {
+  #if canImport(ObjectiveC)
+    @objc public func checkForUpdates(_ sender: Any? = nil) { checkNow() }
+  #else
+    public func checkForUpdates(_ sender: Any? = nil) { checkNow() }
+  #endif
+
+  private func checkNow() {
     guard isEnabled else { return }
     if case .checking(userInitiated: false) = phase { return }  // finishing in the background
     guard phase == .idle else { return window.show(activate: true) }
     guard app.hasNetworkAccess else {
-      if let page = source.releasesPageURL { NSWorkspace.shared.open(page) }
+      if let page = source.releasesPageURL { Desktop.open(page) }
       return
     }
     check(userInitiated: true)
@@ -198,7 +203,7 @@ import Foundation
   func install(_ release: AppRelease) {
     switch installMethod {
     case .openInBrowser, .appStore:
-      NSWorkspace.shared.open(release.downloadURL)
+      Desktop.open(release.downloadURL)
       close()
       return
     default: break
@@ -221,14 +226,18 @@ import Foundation
           let file = try Installer.save(
             archive, into: target, name: release.downloadURL.lastPathComponent)
           phase = .saved(release, file: file)
-          NSWorkspace.shared.activateFileViewerSelecting([file])
+          Desktop.reveal(file)
         default:
-          phase = .verifying(release)
-          let app = try await Installer.extractApp(
-            from: archive, into: folder.appendingPathComponent("extracted"))
-          try await Installer.verify(app, replacing: self.app)
-          newApp = app
-          phase = .readyToInstall(release)
+          #if os(macOS)
+            phase = .verifying(release)
+            let app = try await Installer.extractApp(
+              from: archive, into: folder.appendingPathComponent("extracted"))
+            try await Installer.verify(app, replacing: self.app)
+            newApp = app
+            phase = .readyToInstall(release)
+          #else
+            phase = .failed(release, message: "This copy can't install updates by itself.")
+          #endif
         }
       } catch UpdateError.cancelled {
         if case .downloading = phase { phase = .updateAvailable(release) }
@@ -238,6 +247,7 @@ import Foundation
 
   /// Replaces the app and relaunches.
   func installAndRelaunch(_ release: AppRelease) {
+    #if os(macOS)
     guard let newApp else { return }
     phase = .installing(release)
     work = Task {
@@ -259,6 +269,7 @@ import Foundation
         phase = .failed(release, message: error.localizedDescription)
       }
     }
+    #endif
   }
 
   /// Installing into /Applications must not overwrite a different app that
@@ -274,7 +285,7 @@ import Foundation
   /// Opens the release page or the download in the browser.
   func downloadManually(_ release: AppRelease?) {
     if let url = release?.pageURL ?? release?.downloadURL ?? source.releasesPageURL {
-      NSWorkspace.shared.open(url)
+      Desktop.open(url)
     }
     close()
   }

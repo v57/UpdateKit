@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
+
 /// A published version of the app.
 public struct AppRelease: Equatable, Sendable {
   /// Version without a leading "v", e.g. "1.2".
@@ -116,6 +120,7 @@ public struct GitHubReleases: UpdateSource {
     // /releases/latest skips drafts and pre-releases; the list includes them. With an asset
     // name the list is searched for the newest release that has it, since a repository may
     // publish other things too (DatabasePro's library binaries are its "latest" release).
+    let assetName = Self.platformAssetName(assetName, appName: app.name)
     let searchesList = includePrereleases || assetName != nil
     let path = searchesList ? "releases?per_page=20" : "releases/latest"
     var request = URLRequest(
@@ -139,6 +144,21 @@ public struct GitHubReleases: UpdateSource {
     return try release.map {
       try Self.appRelease(from: $0, appName: app.name, assetName: assetName)
     }
+  }
+
+  /// The asset for this platform: `assetName` on the Mac; on Windows `<name>-Windows-<arch>.zip`, where the name is
+  /// `assetName` without its extension or else the app's (`Shell.zip` → `Shell-Windows-arm64.zip`).
+  static func platformAssetName(_ assetName: String?, appName: String) -> String? {
+    #if os(Windows)
+      let base = assetName.map { ($0 as NSString).deletingPathExtension } ?? appName.replacingOccurrences(of: " ", with: "")
+      #if arch(arm64)
+        return "\(base)-Windows-arm64.zip"
+      #else
+        return "\(base)-Windows-x64.zip"
+      #endif
+    #else
+      return assetName
+    #endif
   }
 
   /// The first (newest) published release in GitHub's list, skipping pre-releases unless

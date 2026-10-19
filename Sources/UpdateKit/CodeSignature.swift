@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 import Security
 
@@ -78,3 +79,4 @@ enum CodeSignature {
     return result?.status == 0
   }
 }
+#endif

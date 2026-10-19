@@ -1,8 +1,15 @@
-import AppKit
 import Foundation
+
+#if os(macOS)
+  import AppKit
+#endif
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
 
 /// Download -> extract -> verify -> install -> relaunch.
 enum Installer {
+  #if os(macOS)
   // MARK: - Extract
 
   /// The .app inside a .zip or .dmg, copied into `folder`.
@@ -129,6 +136,8 @@ enum Installer {
     }
   }
 
+  #endif
+
   /// Moves the downloaded archive into `folder` (unique name) and returns
   /// where it landed.
   static func save(_ archive: URL, into folder: URL, name: String) throws -> URL {
@@ -145,6 +154,7 @@ enum Installer {
     return target
   }
 
+  #if os(macOS)
   // MARK: - Relaunch
 
   /// Opens `app` once this process has exited, then quits. A detached shell
@@ -164,6 +174,7 @@ enum Installer {
     try? process.run()
     NSApp.terminate(nil)
   }
+  #endif
 }
 
 // MARK: - Download

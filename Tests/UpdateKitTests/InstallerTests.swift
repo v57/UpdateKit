@@ -1,3 +1,4 @@
+#if os(macOS)
 import XCTest
 
 @testable import UpdateKit
@@ -221,3 +222,4 @@ private final class ProgressBox: @unchecked Sendable {
     lock.unlock()
   }
 }
+#endif

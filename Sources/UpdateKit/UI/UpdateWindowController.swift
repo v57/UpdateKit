@@ -1,5 +1,7 @@
-import AppKit
 import SwiftUI
+
+#if os(macOS)
+  import AppKit
 
 /// The single "Software Update" window. Works in SwiftUI and AppKit apps
 /// alike; the window is created on first use.
@@ -47,3 +49,31 @@ import SwiftUI
 
   func windowWillClose(_ notification: Notification) { updater.windowClosed() }
 }
+#else
+  /// The single "Software Update" window, opened from code (`HostingWindow`, v57/SwiftUI's).
+  @MainActor final class UpdateWindowController {
+    private unowned let updater: AppUpdater
+    private var window: HostingWindow?
+
+    init(updater: AppUpdater) { self.updater = updater }
+
+    var isVisible: Bool { window?.isVisible ?? false }
+
+    func show(activate: Bool) {
+      let window = self.window ?? makeWindow()
+      self.window = window
+      window.show()
+    }
+
+    func close() { window?.close() }
+
+    private func makeWindow() -> HostingWindow {
+      let updater = self.updater
+      let window = HostingWindow(title: "Software Update", defaultSize: CGSize(width: 560, height: 220)) {
+        UpdateView(updater: updater)
+      }
+      window.onClose = { [weak updater] in updater?.windowClosed() }
+      return window
+    }
+  }
+#endif
