@@ -119,7 +119,7 @@ public struct GitHubReleases: UpdateSource {
   {
     // /releases/latest skips drafts and pre-releases; the list includes them. With an asset
     // name the list is searched for the newest release that has it, since a repository may
-    // publish other things too (DatabasePro's library binaries are its "latest" release).
+    // publish other things too (Database's library binaries are releases too).
     let assetName = Self.platformAssetName(assetName, appName: app.name)
     let searchesList = includePrereleases || assetName != nil
     let path = searchesList ? "releases?per_page=20" : "releases/latest"
