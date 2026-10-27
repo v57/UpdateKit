@@ -177,15 +177,19 @@ final class InstallMethodTests: XCTestCase {
 
 final class ShellTests: XCTestCase {
   func testWindowsAssetNameFollowsTheMacOne() {
+    #if arch(arm64)
+      let arch = "arm64"
+    #else
+      let arch = "x64"
+    #endif
     #if os(Windows)
-      #if arch(arm64)
-        let arch = "arm64"
-      #else
-        let arch = "x64"
-      #endif
       XCTAssertEqual(GitHubReleases.platformAssetName("Shell.zip", appName: "Shell"), "Shell-Windows-\(arch).zip")
       XCTAssertEqual(GitHubReleases.platformAssetName(nil, appName: "Data Base"), "DataBase-Windows-\(arch).zip")
+    #elseif os(Linux)
+      XCTAssertEqual(GitHubReleases.platformAssetName("Shell.zip", appName: "Shell"), "Shell-Linux-\(arch).tar.gz")
+      XCTAssertEqual(GitHubReleases.platformAssetName(nil, appName: "Data Base"), "DataBase-Linux-\(arch).tar.gz")
     #else
+      _ = arch
       XCTAssertEqual(GitHubReleases.platformAssetName("Shell.zip", appName: "Shell"), "Shell.zip")
       XCTAssertNil(GitHubReleases.platformAssetName(nil, appName: "Shell"))
     #endif

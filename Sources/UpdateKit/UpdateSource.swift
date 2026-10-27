@@ -146,15 +146,21 @@ public struct GitHubReleases: UpdateSource {
     }
   }
 
-  /// The asset for this platform: `assetName` on the Mac; on Windows `<name>-Windows-<arch>.zip`, where the name is
-  /// `assetName` without its extension or else the app's (`Shell.zip` → `Shell-Windows-arm64.zip`).
+  /// The asset for this platform: `assetName` on the Mac; on Windows `<name>-Windows-<arch>.zip` and on Linux
+  /// `<name>-Linux-<arch>.tar.gz`, where the name is `assetName` without its extension or else the app's
+  /// (`Shell.zip` → `Shell-Windows-arm64.zip`, `Shell-Linux-x64.tar.gz`).
   static func platformAssetName(_ assetName: String?, appName: String) -> String? {
-    #if os(Windows)
+    #if os(Windows) || os(Linux)
       let base = assetName.map { ($0 as NSString).deletingPathExtension } ?? appName.replacingOccurrences(of: " ", with: "")
       #if arch(arm64)
-        return "\(base)-Windows-arm64.zip"
+        let arch = "arm64"
       #else
-        return "\(base)-Windows-x64.zip"
+        let arch = "x64"
+      #endif
+      #if os(Windows)
+        return "\(base)-Windows-\(arch).zip"
+      #else
+        return "\(base)-Linux-\(arch).tar.gz"
       #endif
     #else
       return assetName

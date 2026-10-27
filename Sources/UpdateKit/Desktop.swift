@@ -29,7 +29,22 @@ enum Desktop {
     #elseif os(Windows)
       run(#"C:\Windows\explorer.exe"#, ["/select,\(file.path.replacingOccurrences(of: "/", with: "\\"))"])
     #else
-      open(file.deletingLastPathComponent())
+      // The freedesktop FileManager1 interface (Files, Dolphin, Thunar, …) selects it; without one the folder opens.
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/dbus-send")
+      process.arguments = [
+        "--session", "--dest=org.freedesktop.FileManager1", "--type=method_call", "--print-reply",
+        "/org/freedesktop/FileManager1", "org.freedesktop.FileManager1.ShowItems",
+        "array:string:\(file.absoluteString)", "string:",
+      ]
+      process.standardOutput = FileHandle.nullDevice
+      process.standardError = FileHandle.nullDevice
+      process.terminationHandler = { process in
+        guard process.terminationStatus != 0 else { return }
+        let folder = file.deletingLastPathComponent()
+        Task { @MainActor in open(folder) }
+      }
+      do { try process.run() } catch { open(file.deletingLastPathComponent()) }
     #endif
   }
 
