@@ -9,12 +9,12 @@ allows, and brings its own update window and menu items.
 import UpdateKit
 
 @main struct MyApp: App {
-  private let updater = AppUpdater(github: "owner/MyApp")
+  private let updater = AppUpdater(github: "owner/MyApp", accent: .orange)  // the window's accent
 
   init() { updater.start() }  // daily checks, once the user turns them on
 
   var body: some Scene {
-    WindowGroup { ContentView() }
+    WindowGroup { ContentView().componentKit(accent: .orange) }
       .commands { UpdaterCommands(updater: updater) }  // Check for Updates…, Check Automatically
   }
 }
@@ -73,7 +73,8 @@ with `APP_UPDATER_FEED=file:///path/to/feed.json`. `APP_UPDATER_DISABLED=1` turn
 
 ## Requirements
 
-macOS 12 or later, Swift 6.
+macOS 14 or later, Swift 6. The update window is drawn with
+[ComponentKit](https://github.com/v57/Component), v57's shared design.
 
 ## License
 

@@ -1,4 +1,12 @@
+import ComponentKit
 import SwiftUI
+
+extension UpdateView {
+  /// The window's root: on the kit, in the app's accent.
+  @MainActor static func root(_ updater: AppUpdater) -> some View {
+    UpdateView(updater: updater).componentKit(accent: updater.accent ?? .accentColor)
+  }
+}
 
 #if os(macOS)
   import AppKit
@@ -18,11 +26,7 @@ import SwiftUI
     self.window = window
     if !window.isVisible { window.center() }
     if activate {
-      if #available(macOS 14, *) {
-        NSApp.activate()
-      } else {
-        NSApp.activate(ignoringOtherApps: true)
-      }
+      NSApp.activate()
       window.makeKeyAndOrderFront(nil)
     } else {
       window.orderFront(nil)
@@ -33,15 +37,17 @@ import SwiftUI
 
   private func makeWindow() -> NSWindow {
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 560, height: 200), styleMask: [.titled, .closable],
-      backing: .buffered, defer: true)
+      contentRect: NSRect(x: 0, y: 0, width: 520, height: 200),
+      styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: true)
     window.title = "Software Update"
+    // The sheet's header names the phase; its panel ground runs up under the title bar.
+    window.titleVisibility = .hidden
+    window.titlebarAppearsTransparent = true
     window.isReleasedWhenClosed = false
     window.delegate = self
-    let host = NSHostingView(rootView: UpdateView(updater: updater))
-    // The window follows the content's size as the phase changes (macOS 13+;
-    // on 12 it is sized once, when shown).
-    if #available(macOS 13, *) { host.sizingOptions = [.preferredContentSize] }
+    // The hosting view's size constraints (its default sizing) make the window follow the content's size as the
+    // phase changes; `.preferredContentSize` alone left its fitting size at zero.
+    let host = NSHostingView(rootView: UpdateView.root(updater))
     window.contentView = host
     window.setContentSize(host.fittingSize)
     return window
@@ -69,8 +75,8 @@ import SwiftUI
 
     private func makeWindow() -> HostingWindow {
       let updater = self.updater
-      let window = HostingWindow(title: "Software Update", defaultSize: CGSize(width: 560, height: 220)) {
-        UpdateView(updater: updater)
+      let window = HostingWindow(title: "Software Update", defaultSize: CGSize(width: 520, height: 220)) {
+        UpdateView.root(updater)
       }
       window.onClose = { [weak updater] in updater?.windowClosed() }
       return window

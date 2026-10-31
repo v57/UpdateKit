@@ -1,12 +1,14 @@
 import Combine
+import ComponentKit
 import Foundation
+import SwiftUI
 
 /// Checks for new versions of the running app, shows the update window and
 /// installs the update the way the app's situation allows (InstallMethod):
 /// in place with a relaunch, through the administrator prompt, into
 /// Downloads for a sandboxed app, or through the browser.
 ///
-///     let updater = AppUpdater(github: "v57/Player")
+///     let updater = AppUpdater(github: "v57/Player", accent: .red)
 ///     updater.start()                       // daily checks, once the user turns them on
 ///     // SwiftUI: .commands { UpdaterCommands(updater: updater) }
 ///     // AppKit: a menu item with action #selector(AppUpdater.checkForUpdates(_:))
@@ -43,8 +45,11 @@ import Foundation
   public let configuration: Configuration
   /// How updates get installed in this app's situation.
   public let installMethod: InstallMethod
+  /// The update window's accent, as the app's scenes get it from `.componentKit(accent:)`; nil uses the app's
+  /// accent colour (its asset catalog's AccentColor, else the system's).
+  public var accent: Color?
 
-  @Published public private(set) var phase: Phase = .idle
+  @Published public internal(set) var phase: Phase = .idle
 
   /// The updater does anything at all: not an App Store build, not disabled.
   public var isEnabled: Bool {
@@ -84,9 +89,10 @@ import Foundation
 
   public init(
     source: UpdateSource, configuration: Configuration = Configuration(), app: AppInfo = .current(),
-    defaults: UserDefaults = .standard
+    defaults: UserDefaults = .standard, accent: Color? = nil
   ) {
     self.app = app
+    self.accent = accent
     self.configuration = configuration
     self.defaults = defaults
     if let feed = ProcessInfo.processInfo.environment["APP_UPDATER_FEED"],
@@ -101,13 +107,13 @@ import Foundation
     super.init()
   }
 
-  /// Releases of a GitHub repository, "owner/name".
+  /// Releases of a GitHub repository, "owner/name". `accent` is the app's, for the update window.
   public convenience init(
     github repository: String, assetName: String? = nil,
-    configuration: Configuration = Configuration()
+    configuration: Configuration = Configuration(), accent: Color? = nil
   ) {
     self.init(
-      source: GitHubReleases(repository, assetName: assetName), configuration: configuration)
+      source: GitHubReleases(repository, assetName: assetName), configuration: configuration, accent: accent)
   }
 
   // MARK: - Checking
@@ -145,7 +151,7 @@ import Foundation
     if case .checking(userInitiated: false) = phase { return }  // finishing in the background
     guard phase == .idle else { return window.show(activate: true) }
     guard app.hasNetworkAccess else {
-      if let page = source.releasesPageURL { Desktop.open(page) }
+      if let page = source.releasesPageURL { KitDesktop.open(page) }
       return
     }
     check(userInitiated: true)
@@ -203,7 +209,7 @@ import Foundation
   func install(_ release: AppRelease) {
     switch installMethod {
     case .openInBrowser, .appStore:
-      Desktop.open(release.downloadURL)
+      KitDesktop.open(release.downloadURL)
       close()
       return
     default: break
@@ -285,7 +291,7 @@ import Foundation
   /// Opens the release page or the download in the browser.
   func downloadManually(_ release: AppRelease?) {
     if let url = release?.pageURL ?? release?.downloadURL ?? source.releasesPageURL {
-      Desktop.open(url)
+      KitDesktop.open(url)
     }
     close()
   }
