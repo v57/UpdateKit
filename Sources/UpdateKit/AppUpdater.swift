@@ -1,4 +1,3 @@
-import Combine
 import ComponentKit
 import Foundation
 import SwiftUI
@@ -16,7 +15,7 @@ import SwiftUI
 /// Everything else (name, version, icon, signing team, sandbox, App Store)
 /// is read from the app. `APP_UPDATER_FEED=<url>` swaps the source for a
 /// JSONFeed (testing); `APP_UPDATER_DISABLED=1` turns the updater off.
-@MainActor public final class AppUpdater: NSObject, ObservableObject {
+@MainActor @Observable public final class AppUpdater: NSObject {
   public struct Configuration: Sendable {
     /// Time between background checks.
     public var checkInterval: TimeInterval = 24 * 60 * 60
@@ -49,7 +48,7 @@ import SwiftUI
   /// accent colour (its asset catalog's AccentColor, else the system's).
   public var accent: Color?
 
-  @Published public internal(set) var phase: Phase = .idle
+  public internal(set) var phase: Phase = .idle
 
   /// The updater does anything at all: not an App Store build, not disabled.
   public var isEnabled: Bool {
@@ -60,11 +59,12 @@ import SwiftUI
   /// window. Off until the user turns them on: an app never contacts the
   /// update server without the user asking, so there is deliberately no
   /// way to start with them on.
-  @Published public var automaticallyChecksForUpdates: Bool {
+  public var automaticallyChecksForUpdates: Bool {
     didSet { defaults.set(automaticallyChecksForUpdates, forKey: Keys.automatic) }
   }
 
-  public var lastCheckDate: Date? { defaults.object(forKey: Keys.lastCheck) as? Date }
+  /// When the last check finished; persisted, and tracked so a view showing it follows a check.
+  public private(set) var lastCheckDate: Date?
 
   /// A check or an install is running.
   public var isBusy: Bool {
@@ -81,11 +81,11 @@ import SwiftUI
   }
 
   private let defaults: UserDefaults
-  private var timer: Timer?
-  private var work: Task<Void, Never>?
-  private var download: Download?
-  private var newApp: URL?
-  private lazy var window = UpdateWindowController(updater: self)
+  @ObservationIgnored private var timer: Timer?
+  @ObservationIgnored private var work: Task<Void, Never>?
+  @ObservationIgnored private var download: Download?
+  @ObservationIgnored private var newApp: URL?
+  @ObservationIgnored private lazy var window = UpdateWindowController(updater: self)
 
   public init(
     source: UpdateSource, configuration: Configuration = Configuration(), app: AppInfo = .current(),
@@ -104,6 +104,7 @@ import SwiftUI
     }
     installMethod = InstallMethod.choose(for: .current(app: app))
     automaticallyChecksForUpdates = defaults.bool(forKey: Keys.automatic)
+    lastCheckDate = defaults.object(forKey: Keys.lastCheck) as? Date
     super.init()
   }
 
@@ -164,7 +165,9 @@ import SwiftUI
       do {
         let release = try await source.latestRelease(
           for: app, includePrereleases: configuration.includesPrereleases)
-        defaults.set(Date(), forKey: Keys.lastCheck)
+        let now = Date()
+        defaults.set(now, forKey: Keys.lastCheck)
+        lastCheckDate = now
         guard let release, isNewer(release) else {
           phase = userInitiated ? .upToDate : .idle
           return

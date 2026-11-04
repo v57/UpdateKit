@@ -5,7 +5,7 @@ import SwiftUI
 /// title and meta, the release notes or the error as the body, and the footer bar with the work's live icon and the
 /// buttons.
 struct UpdateView: View {
-  @ObservedObject var updater: AppUpdater
+  @Bindable var updater: AppUpdater
 
   private var app: AppInfo { updater.app }
 
