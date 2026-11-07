@@ -21,18 +21,20 @@ public struct UpdateCheckCard: View {
   }
 
   /// Who answers: "github.com", or the update server's name.
-  private var server: String { updater.source.releasesPageURL?.host() ?? "the update server" }
+  private var server: String { updater.source.releasesPageURL?.host() ?? String(localized: "the update server") }
 
-  private var lastCheck: String {
-    updater.lastCheckDate.map { "Last checked \($0.kitFormatted(.ago))" } ?? "Never checked"
+  private var lastCheck: LocalizedStringKey {
+    if let date = updater.lastCheckDate { "Last checked \(date.kitFormatted(.ago))" } else { "Never checked" }
   }
 
   public var body: some View {
     if updater.isEnabled {
       FormCard(
         "Updates",
-        footer: "Once a day \(updater.app.name) asks \(server) for its latest release, which shows the server your IP "
-          + "address and nothing else about you. Off, it only asks when you choose Check for Updates."
+        footer: """
+          Once a day \(updater.app.name) asks \(server) for its latest release, which shows the server your IP \
+          address and nothing else about you. Off, it only asks when you choose Check for Updates.
+          """
       ) {
         FormRow("Check for updates automatically", help: lastCheck, systemImage: "arrow.down.circle", hue: .blue) {
           Toggle("Check for updates automatically", isOn: isAutomatic)
