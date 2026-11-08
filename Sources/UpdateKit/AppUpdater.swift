@@ -337,7 +337,8 @@ import SwiftUI
   /// Replaces the app and relaunches.
   func installAndRelaunch(_ release: AppRelease) {
     #if os(macOS)
-    guard let newApp else { return }
+    guard let newApp, let team = app.teamIdentifier else { return }
+    let identifier = app.bundleIdentifier
     phase = .installing(release)
     work = Task {
       do {
@@ -346,11 +347,11 @@ import SwiftUI
         case .replace(let url):
           target = url
           try checkTarget(url)
-          try await Installer.replace(url, with: newApp)
+          try await Installer.replace(url, with: newApp, identifier: identifier, team: team)
         case .replaceAsAdministrator(let url):
           target = url
           try checkTarget(url)
-          try await Installer.replaceAsAdministrator(url, with: newApp)
+          try await Installer.replaceAsAdministrator(url, with: newApp, identifier: identifier, team: team)
         default: return
         }
         Installer.relaunch(target)

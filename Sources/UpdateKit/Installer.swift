@@ -87,14 +87,23 @@ enum Installer {
 
   /// Moves `newApp` to `target`, replacing what is there. The new copy is
   /// staged next to the target first (same volume, so the swap is two
-  /// renames), and the old app is restored if the swap fails.
-  static func replace(_ target: URL, with newApp: URL) async throws {
+  /// renames), and the old app is restored if the swap fails. The staged copy
+  /// is what gets installed, so it is checked against the signing requirement
+  /// right before the swap: `verify` ran on the download, possibly hours ago,
+  /// and another process could have changed it since.
+  static func replace(_ target: URL, with newApp: URL, identifier: String, team: String) async throws {
     let fm = FileManager.default
     let parent = target.deletingLastPathComponent()
     let id = UUID().uuidString.prefix(8)
     let stage = parent.appendingPathComponent(".\(target.lastPathComponent)-update-\(id)")
     let backup = parent.appendingPathComponent(".\(target.lastPathComponent)-old-\(id)")
     try await Shell.check("/usr/bin/ditto", [newApp.path, stage.path])
+    do {
+      try CodeSignature.validate(bundleAt: stage, identifier: identifier, team: team)
+    } catch {
+      try? fm.removeItem(at: stage)
+      throw error
+    }
     let hadOld = fm.fileExists(atPath: target.path)
     do {
       if hadOld { try fm.moveItem(at: target, to: backup) }
@@ -109,31 +118,47 @@ enum Installer {
     if hadOld { try? fm.removeItem(at: backup) }
   }
 
-  /// `replace(_:with:)` as root, through the macOS administrator prompt.
+  /// `replace(_:with:…)` as root, through the macOS administrator prompt.
   /// Keeps the old app's owner. Throws `.cancelled` when the user cancels.
-  static func replaceAsAdministrator(_ target: URL, with newApp: URL) async throws {
-    let parent = target.deletingLastPathComponent()
-    let id = UUID().uuidString.prefix(8)
-    let stage = parent.appendingPathComponent(".\(target.lastPathComponent)-update-\(id)").path
-    let backup = parent.appendingPathComponent(".\(target.lastPathComponent)-old-\(id)").path
+  static func replaceAsAdministrator(_ target: URL, with newApp: URL, identifier: String, team: String) async throws {
     let attributes = try? FileManager.default.attributesOfItem(atPath: target.path)
     let owner = (attributes?[.ownerAccountID] as? NSNumber)?.intValue ?? Int(getuid())
     let group = (attributes?[.groupOwnerAccountID] as? NSNumber)?.intValue ?? Int(getgid())
-    let q = Shell.quote
-    let script = [
-      "set -e", "/usr/bin/ditto \(q(newApp.path)) \(q(stage))",
-      "/usr/sbin/chown -R \(owner):\(group) \(q(stage))",
-      "if [ -e \(q(target.path)) ]; then /bin/mv \(q(target.path)) \(q(backup)); fi",
-      "/bin/mv \(q(stage)) \(q(target.path)) || { /bin/mv \(q(backup)) \(q(target.path)); exit 1; }",
-      "/bin/rm -rf \(q(backup))",
-    ].joined(separator: "\n")
+    let script = administratorScript(
+      target: target, newApp: newApp, owner: owner, group: group,
+      requirement: CodeSignature.requirement(identifier: identifier, team: team))
     let result = try await Shell.run(
       "/usr/bin/osascript",
       ["-e", "do shell script \(Shell.appleScriptString(script)) with administrator privileges"])
     if result.status != 0 {
       if result.output.contains("-128") { throw UpdateError.cancelled }
+      if result.output.contains(signatureRefused) {
+        throw UpdateError.invalidSignature("it was modified after it was checked.")
+      }
       throw UpdateError.installFailed(result.output.trimmingCharacters(in: .whitespacesAndNewlines))
     }
+  }
+
+  static let signatureRefused = "UpdateKit: the staged copy fails its signature check"
+
+  /// The root script: stage a copy next to the target, make it root's (the old app's owner), check the staged
+  /// copy's signature against `requirement` (what root installs is checked after nobody else can change it),
+  /// then swap. The stage is removed when the check fails.
+  static func administratorScript(target: URL, newApp: URL, owner: Int, group: Int, requirement: String) -> String {
+    let parent = target.deletingLastPathComponent()
+    let id = UUID().uuidString.prefix(8)
+    let stage = parent.appendingPathComponent(".\(target.lastPathComponent)-update-\(id)").path
+    let backup = parent.appendingPathComponent(".\(target.lastPathComponent)-old-\(id)").path
+    let q = Shell.quote
+    return [
+      "set -e", "/usr/bin/ditto \(q(newApp.path)) \(q(stage))",
+      "/usr/sbin/chown -R \(owner):\(group) \(q(stage))",
+      "/usr/bin/codesign --verify --strict --deep -R=\(q(requirement)) \(q(stage)) >/dev/null 2>&1 "
+        + "|| { /bin/rm -rf \(q(stage)); echo \(q(signatureRefused)) >&2; exit 3; }",
+      "if [ -e \(q(target.path)) ]; then /bin/mv \(q(target.path)) \(q(backup)); fi",
+      "/bin/mv \(q(stage)) \(q(target.path)) || { /bin/mv \(q(backup)) \(q(target.path)); exit 1; }",
+      "/bin/rm -rf \(q(backup))",
+    ].joined(separator: "\n")
   }
 
   #endif

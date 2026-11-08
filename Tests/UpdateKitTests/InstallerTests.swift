@@ -34,8 +34,22 @@ final class InstallerTests: XCTestCase {
     return app
   }
 
+  /// Signs `app` with the keychain's identity of that kind and answers its team; skips the test without one.
+  @discardableResult
+  private func sign(_ app: URL, with kind: String = "Developer ID Application") async throws -> String {
+    let identities = try await Shell.run("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"])
+    guard let line = identities.output.split(separator: "\n").first(where: { $0.contains("\"\(kind):") }),
+      let hash = line.split(separator: " ").dropFirst().first
+    else { throw XCTSkip("no \(kind) identity in the keychain") }
+    try await Shell.check("/usr/bin/codesign", ["--force", "--timestamp=none", "--sign", String(hash), app.path])
+    return try XCTUnwrap(CodeSignature.teamIdentifier(ofBundleAt: app))
+  }
+
+  /// Read from disk each time: `Bundle` caches its Info.plist per path.
   private func version(of app: URL) -> String? {
-    Bundle(url: app)?.infoDictionary?["CFBundleShortVersionString"] as? String
+    let plist = (try? Data(contentsOf: app.appendingPathComponent("Contents/Info.plist")))
+      .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] }
+    return plist?["CFBundleShortVersionString"] as? String
   }
 
   // MARK: - Extract
@@ -87,7 +101,8 @@ final class InstallerTests: XCTestCase {
     try FileManager.default.createDirectory(at: installed, withIntermediateDirectories: true)
     let old = try makeApp(in: installed, version: "1.0")
     let new = try makeApp(in: folder, version: "2.0")
-    try await Installer.replace(old, with: new)
+    let team = try await sign(new)
+    try await Installer.replace(old, with: new, identifier: "dev.v57.test", team: team)
     XCTAssertEqual(version(of: old), "2.0")
     XCTAssertEqual(
       try FileManager.default.contentsOfDirectory(atPath: installed.path), ["Test.app"],
@@ -98,8 +113,57 @@ final class InstallerTests: XCTestCase {
     let target = folder.appendingPathComponent("Applications/Test.app")
     try FileManager.default.createDirectory(
       at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try await Installer.replace(target, with: try makeApp(version: "2.0"))
+    let new = try makeApp(version: "2.0")
+    let team = try await sign(new)
+    try await Installer.replace(target, with: new, identifier: "dev.v57.test", team: team)
     XCTAssertEqual(version(of: target), "2.0")
+  }
+
+  /// The download passed `verify`, then something changed it before Install (it waits for the user): the staged
+  /// copy fails its check and nothing is replaced.
+  func testReplaceRefusesACopyChangedAfterItWasChecked() async throws {
+    let installed = folder.appendingPathComponent("Applications")
+    try FileManager.default.createDirectory(at: installed, withIntermediateDirectories: true)
+    let old = try makeApp(in: installed, version: "1.0")
+    let new = try makeApp(in: folder, version: "2.0")
+    let team = try await sign(new)
+    var current = AppInfo.fixture()
+    current.teamIdentifier = team
+    current.bundleURL = old
+    try await Installer.verify(new, replacing: current)
+    try Data("#!/bin/sh\necho swapped\n".utf8).write(to: new.appendingPathComponent("Contents/MacOS/Test"))
+    do {
+      try await Installer.replace(old, with: new, identifier: "dev.v57.test", team: team)
+      XCTFail("a copy changed after the check must not be installed")
+    } catch let error as UpdateError {
+      guard case .invalidSignature = error else { return XCTFail("\(error)") }
+    }
+    XCTAssertEqual(version(of: old), "1.0")
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: installed.path), ["Test.app"])
+  }
+
+  /// The administrator script checks the staged copy too (run here as this user, without the prompt).
+  func testTheAdministratorScriptChecksTheStagedCopy() async throws {
+    let installed = folder.appendingPathComponent("Applications")
+    try FileManager.default.createDirectory(at: installed, withIntermediateDirectories: true)
+    let old = try makeApp(in: installed, version: "1.0")
+    let new = try makeApp(in: folder, version: "2.0")
+    let team = try await sign(new)
+    let requirement = CodeSignature.requirement(identifier: "dev.v57.test", team: team)
+    let script = { Installer.administratorScript(
+      target: old, newApp: new, owner: Int(getuid()), group: Int(getgid()), requirement: requirement) }
+
+    try Data("x".utf8).write(to: new.appendingPathComponent("Contents/extra.txt"))
+    let refused = try await Shell.run("/bin/sh", ["-c", script()])
+    XCTAssertEqual(refused.status, 3)
+    XCTAssertTrue(refused.output.contains(Installer.signatureRefused))
+    XCTAssertEqual(version(of: old), "1.0")
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: installed.path), ["Test.app"])
+
+    try FileManager.default.removeItem(at: new.appendingPathComponent("Contents/extra.txt"))
+    let installedNow = try await Shell.run("/bin/sh", ["-c", script()])
+    XCTAssertEqual(installedNow.status, 0, installedNow.output)
+    XCTAssertEqual(version(of: old), "2.0")
   }
 
   func testSaveNeverOverwrites() throws {
