@@ -12,11 +12,15 @@ enum Installer {
   #if os(macOS)
   // MARK: - Extract
 
-  /// The .app inside a .zip or .dmg, copied into `folder`.
-  static func extractApp(from archive: URL, into folder: URL) async throws -> URL {
+  /// The .app inside a .zip, or a .dmg when `allowsDiskImage`, copied into `folder`. Mounting a disk image has
+  /// the kernel parse a file system from the download before its app's signature can be checked, so only a disk
+  /// image whose minisign signature was checked first is mounted.
+  static func extractApp(from archive: URL, into folder: URL, allowsDiskImage: Bool = false) async throws -> URL {
     let fm = FileManager.default
     try fm.createDirectory(at: folder, withIntermediateDirectories: true)
     switch archive.pathExtension.lowercased() {
+    case "dmg" where !allowsDiskImage:
+      throw UpdateError.invalidArchive("A disk image is installed only with a signature: download it from the release page.")
     case "zip":
       // ditto keeps the code signature intact (symlinks, extended attributes).
       try await Shell.check("/usr/bin/ditto", ["-x", "-k", archive.path, folder.path])

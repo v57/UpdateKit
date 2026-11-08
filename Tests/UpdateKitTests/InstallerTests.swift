@@ -77,8 +77,15 @@ final class InstallerTests: XCTestCase {
         "create", "-quiet", "-srcfolder", source.path, "-format", "UDZO", "-volname", "Test",
         dmg.path,
       ])
+    // Unsigned, it is never mounted.
+    do {
+      _ = try await Installer.extractApp(from: dmg, into: folder.appendingPathComponent("refused"))
+      XCTFail("a disk image without a checked signature must not be mounted")
+    } catch UpdateError.invalidArchive {}
+    XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("refused/mount").path))
+    // With its minisign signature checked first, it is.
     let extracted = try await Installer.extractApp(
-      from: dmg, into: folder.appendingPathComponent("out"))
+      from: dmg, into: folder.appendingPathComponent("out"), allowsDiskImage: true)
     XCTAssertEqual(version(of: extracted), "2.0")
   }
 

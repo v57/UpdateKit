@@ -285,6 +285,7 @@ import SwiftUI
     work = Task {
       do {
         let archive = try await download.start(release.downloadURL)
+        var signatureChecked = false
         if let signatureURL = release.signatureURL {
           phase = .verifying(release)
           do {
@@ -294,6 +295,7 @@ import SwiftUI
             try? FileManager.default.removeItem(at: folder)
             throw error
           }
+          signatureChecked = true
         }
         switch installMethod {
         case .saveToFolder(let target):
@@ -305,7 +307,7 @@ import SwiftUI
           #if os(macOS)
             phase = .verifying(release)
             let app = try await Installer.extractApp(
-              from: archive, into: folder.appendingPathComponent("extracted"))
+              from: archive, into: folder.appendingPathComponent("extracted"), allowsDiskImage: signatureChecked)
             try await Installer.verify(app, replacing: self.app)
             newApp = app
             phase = .readyToInstall(release)

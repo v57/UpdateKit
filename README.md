@@ -75,7 +75,8 @@ Releases are signed by Dev's release (`Minisign.sign(file:secretKey:trustedComme
 
 - `GitHubReleases("owner/repo", assetName:)`: the latest GitHub release. The tag is the version
   (`v1.2` or `1.2`), the body is the release notes (Markdown), and the asset is `assetName` or the `.zip`
-  (else `.dmg`) that best matches the app name. With `assetName`, it is the newest release that has
+  (else `.dmg`) that best matches the app name. An in-place install takes a `.zip`; a `.dmg` is mounted only
+  once its minisign signature has been checked, since mounting has the kernel parse the download first. With `assetName`, it is the newest release that has
   that asset, so the repository can publish other releases too. A `.zip` made with
   `ditto -c -k --keepParent MyApp.app MyApp.zip` is recommended.
 - `JSONFeed(url)`: `{"version": "1.2", "url": "MyApp.zip", "notes": "…", "page": "https://…",
