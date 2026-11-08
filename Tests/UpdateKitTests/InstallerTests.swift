@@ -89,6 +89,27 @@ final class InstallerTests: XCTestCase {
     XCTAssertEqual(version(of: extracted), "2.0")
   }
 
+  /// A zip bomb (here 200 MB of zeros, a few hundred KB zipped) is refused before it fills the disk.
+  func testRefusesAZipBomb() async throws {
+    let source = folder.appendingPathComponent("bomb")
+    let app = try makeApp(in: source)
+    let filler = app.appendingPathComponent("Contents/Resources/zeros")
+    try FileManager.default.createDirectory(at: filler.deletingLastPathComponent(), withIntermediateDirectories: true)
+    FileManager.default.createFile(atPath: filler.path, contents: nil)
+    let handle = try FileHandle(forWritingTo: filler)
+    for _ in 0..<200 { handle.write(Data(count: 1 << 20)) }
+    try handle.close()
+    let zip = folder.appendingPathComponent("Bomb.zip")
+    try await Shell.check("/usr/bin/ditto", ["-c", "-k", "--keepParent", app.path, zip.path])
+    XCTAssertLessThan(Installer.size(of: zip), 2 << 20)
+    let out = folder.appendingPathComponent("out")
+    do {
+      _ = try await Installer.extractApp(from: zip, into: out)
+      XCTFail("a zip that unpacks to far more than its size must be refused")
+    } catch let error as UpdateError { XCTAssertEqual(error, .tooLarge) }
+    XCTAssertLessThan(Installer.size(of: out), 16 << 20)
+  }
+
   func testRejectsAnArchiveWithoutAnApp() async throws {
     let empty = folder.appendingPathComponent("empty")
     try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
@@ -304,6 +325,19 @@ final class InstallerTests: XCTestCase {
   }
 
   // MARK: - Download
+
+  /// A download larger than its release says stops, and nothing is left of it.
+  func testStopsADownloadPastItsLimit() async throws {
+    let source = folder.appendingPathComponent("Big.zip")
+    try Data(repeating: 7, count: 3_000_000).write(to: source)
+    let target = folder.appendingPathComponent("dl")
+    let download = Download(into: target, limit: Installer.downloadLimit(forStatedSize: 1_000)) { _, _ in }
+    do {
+      _ = try await download.start(source)
+      XCTFail("expected the limit to stop it")
+    } catch let error as UpdateError { XCTAssertEqual(error, .tooLarge) }
+    XCTAssertEqual((try? FileManager.default.contentsOfDirectory(atPath: target.path)) ?? [], [])
+  }
 
   func testDownloadsAFileURLWithProgress() async throws {
     let source = folder.appendingPathComponent("Test.zip")

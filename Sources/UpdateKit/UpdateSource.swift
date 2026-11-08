@@ -58,6 +58,7 @@ public enum UpdateError: LocalizedError, Equatable {
   case installFailed(String)
   case unsigned
   case badReleaseSignature(String)
+  case tooLarge
   case cancelled
 
   public var errorDescription: String? {
@@ -73,6 +74,7 @@ public enum UpdateError: LocalizedError, Equatable {
     case .installFailed(let message): return "The update could not be installed. \(message)"
     case .unsigned: return "The update isn't signed, so it can't be checked: download it from the release page."
     case .badReleaseSignature(let reason): return "The update can't be trusted: \(reason)"
+    case .tooLarge: return "The update is far larger than the release says, so it was stopped."
     case .cancelled: return "Cancelled."
     }
   }

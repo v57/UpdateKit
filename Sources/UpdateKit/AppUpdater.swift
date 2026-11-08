@@ -274,7 +274,8 @@ import SwiftUI
     }
     let folder = FileManager.default.temporaryDirectory.appendingPathComponent(
       "AppUpdater-\(UUID().uuidString)", isDirectory: true)
-    let download = Download(into: folder) { [weak self] received, expected in
+    let limit = Installer.downloadLimit(forStatedSize: release.downloadSize)
+    let download = Download(into: folder, limit: limit) { [weak self] received, expected in
       Task { @MainActor in
         guard let self, case .downloading(let r, _, _) = self.phase else { return }
         self.phase = .downloading(r, received: received, expected: expected ?? r.downloadSize)

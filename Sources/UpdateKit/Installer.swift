@@ -22,8 +22,7 @@ enum Installer {
     case "dmg" where !allowsDiskImage:
       throw UpdateError.invalidArchive("A disk image is installed only with a signature: download it from the release page.")
     case "zip":
-      // ditto keeps the code signature intact (symlinks, extended attributes).
-      try await Shell.check("/usr/bin/ditto", ["-x", "-k", archive.path, folder.path])
+      try await extractZip(archive, into: folder, limit: extractionLimit(forArchiveOfSize: size(of: archive)))
       return try findApp(in: folder)
     case "dmg":
       let mount = folder.appendingPathComponent("mount", isDirectory: true)
@@ -46,6 +45,56 @@ enum Installer {
     default:
       throw UpdateError.invalidArchive("Unsupported file type: \(archive.lastPathComponent).")
     }
+  }
+
+  /// Unpacks a zip with ditto (it keeps the code signature intact: symlinks, extended attributes), refusing one
+  /// that says it unpacks to more than `limit` bytes and stopping one that writes more than that anyway: a zip
+  /// bomb would otherwise fill the disk before anything is checked.
+  static func extractZip(_ archive: URL, into folder: URL, limit: Int64) async throws {
+    let listing = try await Shell.run("/usr/bin/zipinfo", ["-t", archive.path])
+    // "3 files, 123456 bytes uncompressed, 4567 bytes compressed:  96.3%"
+    if let declared = listing.output.split(separator: ",").first(where: { $0.contains("bytes uncompressed") })
+      .flatMap({ Int64($0.split(separator: " ").first ?? "") }), declared > limit
+    {
+      throw UpdateError.tooLarge
+    }
+    // Run and watched off the cooperative pool, as Shell.run does: ditto is stopped once the folder outgrows
+    // the limit, whatever the zip claimed.
+    let (status, stopped): (Int32, Bool) = try await withCheckedThrowingContinuation { continuation in
+      DispatchQueue.global(qos: .userInitiated).async {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = ["-x", "-k", archive.path, folder.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
+        do { try process.run() } catch { return continuation.resume(throwing: error) }
+        let stopped = Flag()
+        let watchdog = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        watchdog.schedule(deadline: .now() + 0.1, repeating: 0.1)
+        watchdog.setEventHandler {
+          guard !stopped.value, size(of: folder) > limit else { return }
+          stopped.set()
+          process.terminate()
+        }
+        watchdog.resume()
+        process.waitUntilExit()
+        watchdog.cancel()
+        continuation.resume(returning: (process.terminationStatus, stopped.value))
+      }
+    }
+    if stopped || size(of: folder) > limit {
+      try? FileManager.default.removeItem(at: folder)
+      throw UpdateError.tooLarge
+    }
+    guard status == 0 else { throw UpdateError.installFailed("ditto failed (\(status)).") }
+  }
+
+  private final class Flag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value = false
+    var value: Bool { lock.withLock { _value } }
+    func set() { lock.withLock { _value = true } }
   }
 
   /// The first .app at the top level of `folder` or one level below.
@@ -201,6 +250,34 @@ enum Installer {
     return name.isEmpty ? "update" : name
   }
 
+  // MARK: - Limits
+
+  /// The most a release's download may be: its stated size plus a tenth (at least a megabyte), or 2 GB when the
+  /// source states none.
+  static func downloadLimit(forStatedSize size: Int64?) -> Int64 {
+    guard let size, size > 0 else { return 2 << 30 }
+    return size + max(size / 10, 1 << 20)
+  }
+
+  /// The most an archive may unpack to: twenty times its size, at least 16 MB (apps compress two to four times).
+  static func extractionLimit(forArchiveOfSize size: Int64) -> Int64 {
+    max(size * 20, 16 << 20)
+  }
+
+  /// A file's size, or a folder's total.
+  static func size(of url: URL) -> Int64 {
+    let keys: Set<URLResourceKey> = [.fileSizeKey, .isRegularFileKey]
+    if let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true {
+      return Int64(values.fileSize ?? 0)
+    }
+    var total: Int64 = 0
+    let walker = FileManager.default.enumerator(at: url, includingPropertiesForKeys: Array(keys))
+    while let file = walker?.nextObject() as? URL {
+      total += Int64((try? file.resourceValues(forKeys: keys))?.fileSize ?? 0)
+    }
+    return total
+  }
+
   #if os(macOS)
   // MARK: - Relaunch
 
@@ -234,10 +311,14 @@ final class Download: NSObject, URLSessionDownloadDelegate, @unchecked Sendable 
   private var moveError: Error?
   private var task: URLSessionDownloadTask?
   private let folder: URL
+  private let limit: Int64
+  private var exceeded = false
   private let progress: @Sendable (Int64, Int64?) -> Void
 
-  init(into folder: URL, progress: @escaping @Sendable (Int64, Int64?) -> Void) {
+  /// `limit`: the download stops with `.tooLarge` past that many bytes.
+  init(into folder: URL, limit: Int64 = 2 << 30, progress: @escaping @Sendable (Int64, Int64?) -> Void) {
     self.folder = folder
+    self.limit = limit
     self.progress = progress
   }
 
@@ -269,7 +350,16 @@ final class Download: NSObject, URLSessionDownloadDelegate, @unchecked Sendable 
   func urlSession(
     _ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
     totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
-  ) { progress(totalBytesWritten, totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : nil) }
+  ) {
+    if totalBytesWritten > limit {
+      lock.lock()
+      exceeded = true
+      lock.unlock()
+      downloadTask.cancel()
+      return
+    }
+    progress(totalBytesWritten, totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : nil)
+  }
 
   func urlSession(
     _ session: URLSession, downloadTask: URLSessionDownloadTask,
@@ -282,6 +372,7 @@ final class Download: NSObject, URLSessionDownloadDelegate, @unchecked Sendable 
     let target = folder.appendingPathComponent(name)
     lock.lock()
     defer { lock.unlock() }
+    if exceeded { return }
     if let status = (downloadTask.response as? HTTPURLResponse)?.statusCode, status != 200 {
       moveError = UpdateError.server("HTTP \(status)")
       return
@@ -299,8 +390,12 @@ final class Download: NSObject, URLSessionDownloadDelegate, @unchecked Sendable 
     self.continuation = nil
     let file = finishedFile
     let moveError = moveError
+    let exceeded = exceeded
     lock.unlock()
-    if let error = error as? URLError, error.code == .cancelled {
+    if exceeded {
+      if let file { try? FileManager.default.removeItem(at: file) }
+      continuation?.resume(throwing: UpdateError.tooLarge)
+    } else if let error = error as? URLError, error.code == .cancelled {
       continuation?.resume(throwing: UpdateError.cancelled)
     } else if let error = error ?? moveError {
       continuation?.resume(throwing: error)

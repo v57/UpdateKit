@@ -55,7 +55,9 @@ team's Developer ID (Apple Development and Distribution certificates don't quali
 (notarization) whenever the running copy is Developer ID signed or passes Gatekeeper itself. The copy staged next to
 the app is checked against the same requirement again right before the swap (as root, after it became root's,
 on the administrator path), since the user may click Install long after the download was checked. The old app is
-restored if the swap fails.
+restored if the swap fails. A download stops past its release's stated size plus a tenth, and a zip that says
+it unpacks to more than twenty times its size (at least 16 MB), or writes more than that anyway, is refused before
+it fills the disk.
 
 ## Linux, Windows and unsigned copies: minisign
 
