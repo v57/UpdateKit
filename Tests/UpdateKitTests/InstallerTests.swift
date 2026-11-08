@@ -217,24 +217,15 @@ final class InstallerTests: XCTestCase {
     }
   }
 
-  /// Signs a bundle with a development identity from the keychain and checks
-  /// the team requirement both ways. Skipped on machines without one.
+  /// A Developer ID signature of the same team passes; another team's, or a bundle changed after signing,
+  /// doesn't. Skipped on machines without a Developer ID identity.
   func testAcceptsOnlyTheSameTeam() async throws {
-    let identities = try await Shell.run(
-      "/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"])
-    guard
-      let line = identities.output.split(separator: "\n").first(where: {
-        $0.contains("Apple Development") || $0.contains("Developer ID Application")
-      }), let hash = line.split(separator: " ").dropFirst().first
-    else { throw XCTSkip("no code-signing identity in the keychain") }
     let app = try makeApp()
-    try await Shell.check(
-      "/usr/bin/codesign", ["--force", "--timestamp=none", "--sign", String(hash), app.path])
-    let team = try XCTUnwrap(CodeSignature.teamIdentifier(ofBundleAt: app))
+    let team = try await sign(app)
 
     var current = AppInfo.fixture()
     current.teamIdentifier = team
-    current.bundleURL = try makeApp("Current", version: "1.0")  // unsigned: Gatekeeper rejects it
+    current.bundleURL = try makeApp("Current", version: "1.0")  // unsigned: no notarization asked
     try await Installer.verify(app, replacing: current)
 
     current.teamIdentifier = "ZZZZZZZZZZ"
@@ -254,6 +245,38 @@ final class InstallerTests: XCTestCase {
     } catch let error as UpdateError {
       guard case .invalidSignature = error else { return XCTFail("\(error)") }
     }
+  }
+
+  /// An Apple Development certificate of the same team (any dev machine has one) can't sign an update.
+  func testRefusesAnAppleDevelopmentSignature() async throws {
+    let app = try makeApp()
+    let team = try await sign(app, with: "Apple Development")
+    var current = AppInfo.fixture()
+    current.teamIdentifier = team
+    current.bundleURL = try makeApp("Current", version: "1.0")
+    do {
+      try await Installer.verify(app, replacing: current)
+      XCTFail("a development-signed update must be rejected")
+    } catch let error as UpdateError {
+      XCTAssertEqual(error, .invalidSignature(CodeSignature.reason(for: errSecCSReqFailed)))
+    }
+  }
+
+  /// A Developer ID copy asks for a notarized update even when Gatekeeper rejects the copy itself (not
+  /// notarized, as here, or Gatekeeper turned off).
+  func testADeveloperIDCopyAsksForNotarization() async throws {
+    let app = try makeApp()
+    let team = try await sign(app)
+    var current = AppInfo.fixture()
+    current.teamIdentifier = team
+    current.bundleURL = try makeApp("Current", version: "1.0")
+    try await sign(current.bundleURL)
+    let copyPasses = await CodeSignature.gatekeeperAccepts(current.bundleURL)
+    XCTAssertFalse(copyPasses, "the copy itself isn't notarized")
+    do {
+      try await Installer.verify(app, replacing: current)
+      XCTFail("an update that isn't notarized must be rejected")
+    } catch let error as UpdateError { XCTAssertEqual(error, .notNotarized) }
   }
 
   // MARK: - Download

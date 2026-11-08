@@ -32,10 +32,28 @@ enum CodeSignature {
     return (info as? [String: Any])?[kSecCodeInfoTeamIdentifier as String] as? String
   }
 
+  /// Signed with a Developer ID Application certificate: Apple's Developer ID intermediate
+  /// (1.2.840.113635.100.6.2.6) and the Developer ID Application leaf (1.2.840.113635.100.6.1.13). Apple
+  /// Development and Distribution certificates, which every dev machine and Xcode's automatic signing hold,
+  /// don't match.
+  static let developerID =
+    "anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists"
+
   /// The requirement a genuine update must satisfy: same bundle identifier,
-  /// signed by an Apple-issued certificate of the same team.
+  /// signed with the same team's Developer ID.
   static func requirement(identifier: String, team: String) -> String {
-    "identifier \"\(identifier)\" and anchor apple generic and certificate leaf[subject.OU] = \"\(team)\""
+    "identifier \"\(identifier)\" and \(developerID) and certificate leaf[subject.OU] = \"\(team)\""
+  }
+
+  /// Whether the bundle at `url` is signed with a Developer ID (a release copy; local builds are signed for
+  /// development, or not at all).
+  static func isDeveloperIDSigned(_ url: URL) -> Bool {
+    var staticCode: SecStaticCode?
+    var req: SecRequirement?
+    guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess, let staticCode,
+      SecRequirementCreateWithString(developerID as CFString, [], &req) == errSecSuccess, let req
+    else { return false }
+    return SecStaticCodeCheckValidity(staticCode, [], req) == errSecSuccess
   }
 
   /// Validates the whole bundle (every architecture, nested code, strict)

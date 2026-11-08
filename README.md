@@ -51,7 +51,8 @@ on for them.
 
 Before anything is replaced, the downloaded app must have the same bundle identifier, be newer, pass
 strict code-signature validation (every architecture, nested code) against a requirement for the same
-signing team, and pass Gatekeeper (notarization) whenever the running copy does. The copy staged next to
+team's Developer ID (Apple Development and Distribution certificates don't qualify), and pass Gatekeeper
+(notarization) whenever the running copy is Developer ID signed or passes Gatekeeper itself. The copy staged next to
 the app is checked against the same requirement again right before the swap (as root, after it became root's,
 on the administrator path), since the user may click Install long after the download was checked. The old app is
 restored if the swap fails.

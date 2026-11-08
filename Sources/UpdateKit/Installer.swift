@@ -60,8 +60,10 @@ enum Installer {
   // MARK: - Verify
 
   /// A download may replace the running app only if it is the same app
-  /// (bundle identifier), newer, signed by the same team, and — when the
-  /// running copy passes Gatekeeper — passes Gatekeeper too (notarized).
+  /// (bundle identifier), newer, signed with the same team's Developer ID, and,
+  /// when the running copy is a Developer ID release or passes Gatekeeper,
+  /// passes Gatekeeper too (notarized). A release copy always asks for
+  /// notarization, also where Gatekeeper is off or rejects the copy itself.
   static func verify(_ newApp: URL, replacing app: AppInfo) async throws {
     guard let bundle = Bundle(url: newApp), let info = bundle.infoDictionary else {
       throw UpdateError.invalidArchive("The app has no Info.plist.")
@@ -78,7 +80,9 @@ enum Installer {
       throw UpdateError.invalidSignature("this copy of \(app.name) is not signed by a team.")
     }
     try CodeSignature.validate(bundleAt: newApp, identifier: identifier, team: team)
-    if await CodeSignature.gatekeeperAccepts(app.bundleURL) {
+    if CodeSignature.isDeveloperIDSigned(app.bundleURL) {
+      guard await CodeSignature.gatekeeperAccepts(newApp) else { throw UpdateError.notNotarized }
+    } else if await CodeSignature.gatekeeperAccepts(app.bundleURL) {
       guard await CodeSignature.gatekeeperAccepts(newApp) else { throw UpdateError.notNotarized }
     }
   }
