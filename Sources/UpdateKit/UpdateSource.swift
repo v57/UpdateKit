@@ -17,10 +17,13 @@ public struct AppRelease: Equatable, Sendable {
   public var downloadURL: URL
   public var downloadSize: Int64?
   public var date: Date?
+  /// The download's minisign signature (`<asset>.minisig` in the same release), required wherever there is no
+  /// code signature to check: off the Mac, and on a Mac copy without a team.
+  public var signatureURL: URL?
 
   public init(
     version: String, title: String? = nil, notes: String? = nil, pageURL: URL? = nil,
-    downloadURL: URL, downloadSize: Int64? = nil, date: Date? = nil
+    downloadURL: URL, downloadSize: Int64? = nil, date: Date? = nil, signatureURL: URL? = nil
   ) {
     self.version = Version(version).description
     self.title = title
@@ -29,7 +32,11 @@ public struct AppRelease: Equatable, Sendable {
     self.downloadURL = downloadURL
     self.downloadSize = downloadSize
     self.date = date
+    self.signatureURL = signatureURL
   }
+
+  /// The download's file name, which its signature must name.
+  public var assetName: String { downloadURL.lastPathComponent }
 }
 
 /// Where releases are published.
@@ -49,6 +56,8 @@ public enum UpdateError: LocalizedError, Equatable {
   case invalidSignature(String)
   case notNotarized
   case installFailed(String)
+  case unsigned
+  case badReleaseSignature(String)
   case cancelled
 
   public var errorDescription: String? {
@@ -62,6 +71,8 @@ public enum UpdateError: LocalizedError, Equatable {
     case .invalidSignature(let reason): return "The update can't be trusted: \(reason)"
     case .notNotarized: return "macOS Gatekeeper rejected the update (not notarized)."
     case .installFailed(let message): return "The update could not be installed. \(message)"
+    case .unsigned: return "The update isn't signed, so it can't be checked: download it from the release page."
+    case .badReleaseSignature(let reason): return "The update can't be trusted: \(reason)"
     case .cancelled: return "Cancelled."
     }
   }
@@ -184,9 +195,11 @@ public struct GitHubReleases: UpdateSource {
     guard let asset = pickAsset(release.assets.map(\.name), appName: appName, assetName: assetName),
       let match = release.assets.first(where: { $0.name == asset })
     else { throw UpdateError.noDownload }
+    let signature = release.assets.first { $0.name == asset + ".minisig" }
     return AppRelease(
       version: release.tagName, title: release.name, notes: release.body, pageURL: release.htmlURL,
-      downloadURL: match.browserDownloadURL, downloadSize: match.size, date: release.publishedAt)
+      downloadURL: match.browserDownloadURL, downloadSize: match.size, date: release.publishedAt,
+      signatureURL: signature?.browserDownloadURL)
   }
 
   /// `assetName` when given; else a .zip, then a .dmg, preferring names that
@@ -212,7 +225,7 @@ public struct GitHubReleases: UpdateSource {
 /// A JSON document anywhere (https or file URL):
 ///
 ///     {"version": "1.2", "url": "https://…/App.zip", "notes": "Markdown",
-///      "page": "https://…", "title": "App 1.2", "size": 1234567}
+///      "page": "https://…", "title": "App 1.2", "size": 1234567, "signature": "App.zip.minisig"}
 ///
 /// For apps not on GitHub, and for testing an update locally.
 public struct JSONFeed: UpdateSource {
@@ -231,6 +244,7 @@ public struct JSONFeed: UpdateSource {
     var page: URL?
     var title: String?
     var size: Int64?
+    var signature: String?
   }
 
   public func latestRelease(for app: AppInfo, includePrereleases: Bool) async throws -> AppRelease?
@@ -249,6 +263,7 @@ public struct JSONFeed: UpdateSource {
     return AppRelease(
       version: entry.version, title: entry.title, notes: entry.notes, pageURL: entry.page,
       downloadURL: URL(string: entry.url.relativeString, relativeTo: url)?.absoluteURL ?? entry.url,
-      downloadSize: entry.size)
+      downloadSize: entry.size,
+      signatureURL: entry.signature.flatMap { URL(string: $0, relativeTo: url)?.absoluteURL })
   }
 }

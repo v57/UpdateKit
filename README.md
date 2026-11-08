@@ -46,13 +46,27 @@ on for them.
 | Run from a disk image or translocated (never moved out of Downloads) | Installed into /Applications instead |
 | Sandboxed with network and Downloads access | The update is saved to Downloads and shown in Finder |
 | Sandboxed without them | The browser downloads it |
-| Unsigned or ad-hoc signed | Saved to Downloads: nothing to verify it against |
+| Unsigned or ad-hoc signed | Saved to Downloads once its minisign signature checks out (see below), else the release page opens |
 | From the App Store | The updater stays off (the App Store updates it) |
 
 Before anything is replaced, the downloaded app must have the same bundle identifier, be newer, pass
 strict code-signature validation (every architecture, nested code) against a requirement for the same
 signing team, and pass Gatekeeper (notarization) whenever the running copy does. The old app is
 restored if the swap fails.
+
+## Linux, Windows and unsigned copies: minisign
+
+Where there is no code signature to hold a download to (Linux, Windows, and a Mac copy without a team), every
+release file needs a minisign signature next to it, `<file>.minisig` in the same release, made with the release
+key whose public half is built in (`Minisign.PublicKey.v57Release`, key id `4B34449C5FA3E909`; pass `releaseKey:`
+for another). The download is checked before it is kept: a prehashed Ed25519 signature (BLAKE2b-512, minisign's
+`ED`; the legacy format is refused) by that key, whose trusted comment names this file and this version
+(`timestamp:…<tab>file:<name><tab>version:<version>`), so a signed file of another app, platform or older release
+can't stand in for it. A missing or bad signature is refused with a message, and the file is deleted. The same
+files check with `minisign -Vm <file> -P RWQJ6aNfnEQ0S8QbwuKNHC2GRVVtX/QBZUDBkqjl2JH1KOqlwZyVgJsF`.
+
+Releases are signed by Dev's release (`Minisign.sign(file:secretKey:trustedComment:)` with
+`Minisign.releaseComment(fileName:version:)`), the secret key in that Mac's keychain.
 
 ## Where releases come from
 
@@ -61,8 +75,8 @@ restored if the swap fails.
   (else `.dmg`) that best matches the app name. With `assetName`, it is the newest release that has
   that asset, so the repository can publish other releases too. A `.zip` made with
   `ditto -c -k --keepParent MyApp.app MyApp.zip` is recommended.
-- `JSONFeed(url)`: `{"version": "1.2", "url": "MyApp.zip", "notes": "…", "page": "https://…"}` at any
-  https or file URL (`url` may be relative to the feed).
+- `JSONFeed(url)`: `{"version": "1.2", "url": "MyApp.zip", "notes": "…", "page": "https://…",
+  "signature": "MyApp.zip.minisig"}` at any https or file URL (`url` and `signature` may be relative to the feed).
 - Anything else: conform to `UpdateSource`.
 
 ## Testing an update locally

@@ -2,6 +2,10 @@ import ComponentKit
 import Foundation
 import SwiftUI
 
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
+
 /// Checks for new versions of the running app, shows the update window and
 /// installs the update the way the app's situation allows (InstallMethod):
 /// in place with a relaunch, through the administrator prompt, into
@@ -44,6 +48,8 @@ import SwiftUI
   public let configuration: Configuration
   /// How updates get installed in this app's situation.
   public let installMethod: InstallMethod
+  /// The key release files without a code signature are signed with (`Minisign.PublicKey.v57Release`).
+  public let releaseKey: Minisign.PublicKey
   /// The update window's accent, as the app's scenes get it from `.componentKit(accent:)`; nil uses the app's
   /// accent colour (its asset catalog's AccentColor, else the system's).
   public var accent: Color?
@@ -87,11 +93,22 @@ import SwiftUI
   @ObservationIgnored private var newApp: URL?
   @ObservationIgnored private lazy var window = UpdateWindowController(updater: self)
 
-  public init(
+  public convenience init(
     source: UpdateSource, configuration: Configuration = Configuration(), app: AppInfo = .current(),
-    defaults: UserDefaults = .standard, accent: Color? = nil
+    defaults: UserDefaults = .standard, accent: Color? = nil, releaseKey: Minisign.PublicKey = .v57Release
+  ) {
+    self.init(
+      source: source, configuration: configuration, app: app, defaults: defaults, accent: accent,
+      releaseKey: releaseKey, installMethod: nil)
+  }
+
+  /// `installMethod`: the one to use instead of the one the app's situation picks (tests).
+  init(
+    source: UpdateSource, configuration: Configuration = Configuration(), app: AppInfo, defaults: UserDefaults,
+    accent: Color?, releaseKey: Minisign.PublicKey, installMethod: InstallMethod?
   ) {
     self.app = app
+    self.releaseKey = releaseKey
     self.accent = accent
     self.configuration = configuration
     self.defaults = defaults
@@ -102,7 +119,7 @@ import SwiftUI
     } else {
       self.source = source
     }
-    installMethod = InstallMethod.choose(for: .current(app: app))
+    self.installMethod = installMethod ?? InstallMethod.choose(for: .current(app: app))
     automaticallyChecksForUpdates = defaults.bool(forKey: Keys.automatic)
     lastCheckDate = defaults.object(forKey: Keys.lastCheck) as? Date
     super.init()
@@ -208,6 +225,18 @@ import SwiftUI
     phase = .idle
   }
 
+  /// A download must carry a good minisign signature by `releaseKey` before it is kept: off the Mac, where
+  /// nothing else vouches for it, and on a Mac copy without a team, which has no code signature to hold an
+  /// update to. Elsewhere the code signature does (`Installer.verify`), and a signature is checked when the
+  /// release has one.
+  var requiresReleaseSignature: Bool {
+    #if os(macOS)
+      app.teamIdentifier == nil
+    #else
+      true
+    #endif
+  }
+
   /// Downloads the release, then verifies (in-place installs) or saves it.
   func install(_ release: AppRelease) {
     switch installMethod {
@@ -216,6 +245,15 @@ import SwiftUI
       close()
       return
     default: break
+    }
+    if requiresReleaseSignature, release.signatureURL == nil {
+      #if os(macOS)
+        // Nothing to check the download against: the release page, never an unchecked file.
+        return downloadManually(release)
+      #else
+        phase = .failed(release, message: UpdateError.unsigned.localizedDescription)
+        return
+      #endif
     }
     let folder = FileManager.default.temporaryDirectory.appendingPathComponent(
       "AppUpdater-\(UUID().uuidString)", isDirectory: true)
@@ -230,6 +268,16 @@ import SwiftUI
     work = Task {
       do {
         let archive = try await download.start(release.downloadURL)
+        if let signatureURL = release.signatureURL {
+          phase = .verifying(release)
+          do {
+            try await Self.checkSignature(of: archive, release: release, signatureURL: signatureURL, key: releaseKey)
+          } catch {
+            // A file that fails its check is never kept, not even in the temporary folder.
+            try? FileManager.default.removeItem(at: folder)
+            throw error
+          }
+        }
         switch installMethod {
         case .saveToFolder(let target):
           let file = try Installer.save(
@@ -252,6 +300,38 @@ import SwiftUI
         if case .downloading = phase { phase = .updateAvailable(release) }
       } catch { phase = .failed(release, message: error.localizedDescription) }
     }
+  }
+
+  /// Checks a downloaded file against its release's minisign signature: signed by `key`, for this file name
+  /// and this version.
+  nonisolated static func checkSignature(
+    of file: URL, release: AppRelease, signatureURL: URL, key: Minisign.PublicKey
+  ) async throws {
+    let text = try await fetchSignature(signatureURL)
+    do {
+      try Minisign.verifyRelease(
+        file: file, signature: text, publicKey: key, fileName: release.assetName, version: release.version)
+    } catch let error as MinisignError {
+      throw UpdateError.badReleaseSignature(error.localizedDescription)
+    }
+  }
+
+  /// A `.minisig` file: a few hundred bytes, so anything over 16 KB is refused.
+  nonisolated static func fetchSignature(_ url: URL) async throws -> String {
+    let data: Data
+    if url.isFileURL {
+      data = try Data(contentsOf: url)
+    } else {
+      let (body, response) = try await URLSession.shared.data(
+        for: URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20))
+      let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+      guard status == 200 else { throw UpdateError.server("HTTP \(status) for the signature") }
+      data = body
+    }
+    guard data.count <= 16_384, let text = String(data: data, encoding: .utf8) else {
+      throw UpdateError.badReleaseSignature(MinisignError.malformedSignature.localizedDescription)
+    }
+    return text
   }
 
   /// Replaces the app and relaunches.
