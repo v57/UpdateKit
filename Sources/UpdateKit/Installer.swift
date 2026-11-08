@@ -168,9 +168,12 @@ enum Installer {
   #endif
 
   /// Moves the downloaded archive into `folder` (unique name) and returns
-  /// where it landed.
+  /// where it landed. `name` comes from the server (a URL's last component,
+  /// which decodes `%2F`), so it is reduced to one plain file name first and
+  /// the result must sit directly in `folder`.
   static func save(_ archive: URL, into folder: URL, name: String) throws -> URL {
     let fm = FileManager.default
+    let name = safeFileName(name)
     let base = (name as NSString).deletingPathExtension
     let ext = (name as NSString).pathExtension
     var target = folder.appendingPathComponent(name)
@@ -179,8 +182,19 @@ enum Installer {
       target = folder.appendingPathComponent("\(base) \(n).\(ext)")
       n += 1
     }
+    guard target.deletingLastPathComponent().standardizedFileURL.path == folder.standardizedFileURL.path else {
+      throw UpdateError.invalidArchive("The download's name isn't a file name.")
+    }
     try fm.moveItem(at: archive, to: target)
     return target
+  }
+
+  /// One file name: no folder separators, no leading dot (hidden files, `..`), no control characters.
+  static func safeFileName(_ name: String) -> String {
+    var name = String(name.map { $0 == "/" || $0 == "\\" || $0 == ":" || $0.isNewline || ($0.asciiValue ?? 32) < 32 ? "_" : $0 })
+    while name.hasPrefix(".") { name = "_" + name.dropFirst() }
+    name = name.trimmingCharacters(in: .whitespaces)
+    return name.isEmpty ? "update" : name
   }
 
   #if os(macOS)

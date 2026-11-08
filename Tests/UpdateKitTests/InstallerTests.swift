@@ -179,6 +179,23 @@ final class InstallerTests: XCTestCase {
       ["Test 2.zip", "Test.zip"])
   }
 
+  /// A name from the server can't leave the folder: the audit's probe, whose last URL component decodes `%2F`
+  /// into a path that ended in ~/Library/LaunchAgents.
+  func testSaveKeepsAServerNameInsideTheFolder() throws {
+    let downloads = folder.appendingPathComponent("Home/Downloads")
+    try FileManager.default.createDirectory(at: downloads, withIntermediateDirectories: true)
+    let url = try XCTUnwrap(URL(string: "https://example.com/a%2F..%2F..%2FLibrary%2FLaunchAgents%2Fx.plist"))
+    XCTAssertTrue(url.lastPathComponent.contains("/"))
+    for name in [url.lastPathComponent, "../../x.plist", "..", ".hidden.zip", ""] {
+      let file = folder.appendingPathComponent("tmp-\(UUID().uuidString)")
+      try Data("plist".utf8).write(to: file)
+      let saved = try Installer.save(file, into: downloads, name: name)
+      XCTAssertEqual(saved.deletingLastPathComponent().standardizedFileURL.path, downloads.standardizedFileURL.path, name)
+      XCTAssertFalse(saved.lastPathComponent.hasPrefix("."), name)
+    }
+    XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Home/Library").path))
+  }
+
   // MARK: - Verify
 
   func testRejectsADifferentApp() async throws {
