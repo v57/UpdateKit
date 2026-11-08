@@ -17,8 +17,9 @@ import SwiftUI
 ///     // AppKit: a menu item with action #selector(AppUpdater.checkForUpdates(_:))
 ///
 /// Everything else (name, version, icon, signing team, sandbox, App Store)
-/// is read from the app. `APP_UPDATER_FEED=<url>` swaps the source for a
-/// JSONFeed (testing); `APP_UPDATER_DISABLED=1` turns the updater off.
+/// is read from the app. In debug builds `APP_UPDATER_FEED=<url>` swaps the
+/// source for a JSONFeed (testing) and `APP_UPDATER_DISABLED=1` turns the
+/// updater off; a release build ignores both.
 @MainActor @Observable public final class AppUpdater: NSObject {
   public struct Configuration: Sendable {
     /// Time between background checks.
@@ -58,7 +59,23 @@ import SwiftUI
 
   /// The updater does anything at all: not an App Store build, not disabled.
   public var isEnabled: Bool {
-    installMethod != .appStore && ProcessInfo.processInfo.environment["APP_UPDATER_DISABLED"] != "1"
+    installMethod != .appStore && Self.debugSwitch("APP_UPDATER_DISABLED") != "1"
+  }
+
+  /// A switch from the environment, read in debug builds only: in a release build anything that can set the
+  /// app's environment (`launchctl setenv`) could otherwise turn updates off silently or point them at any feed.
+  nonisolated static func debugSwitch(
+    _ name: String, environment: [String: String] = ProcessInfo.processInfo.environment, isDebug: Bool = isDebugBuild
+  ) -> String? {
+    isDebug ? environment[name] : nil
+  }
+
+  nonisolated static var isDebugBuild: Bool {
+    #if DEBUG
+      true
+    #else
+      false
+    #endif
   }
 
   /// Background checks; persisted, shown as a menu toggle and in the update
@@ -112,7 +129,7 @@ import SwiftUI
     self.accent = accent
     self.configuration = configuration
     self.defaults = defaults
-    if let feed = ProcessInfo.processInfo.environment["APP_UPDATER_FEED"],
+    if let feed = Self.debugSwitch("APP_UPDATER_FEED"),
       let url = URL(string: feed), url.scheme != nil
     {
       self.source = JSONFeed(url)

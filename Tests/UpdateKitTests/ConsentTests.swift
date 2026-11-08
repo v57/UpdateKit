@@ -19,4 +19,13 @@ import XCTest
       source: JSONFeed(URL(fileURLWithPath: "/dev/null")), app: .fixture(), defaults: defaults)
     XCTAssertTrue(reopened.automaticallyChecksForUpdates)
   }
+
+  /// A release build ignores the environment's switches (a process that sets them can't turn updates off or
+  /// point them at another feed); a debug build reads them.
+  func testEnvironmentSwitchesAreForDebugBuildsOnly() {
+    let environment = ["APP_UPDATER_DISABLED": "1", "APP_UPDATER_FEED": "http://evil.example/feed.json"]
+    XCTAssertNil(AppUpdater.debugSwitch("APP_UPDATER_DISABLED", environment: environment, isDebug: false))
+    XCTAssertNil(AppUpdater.debugSwitch("APP_UPDATER_FEED", environment: environment, isDebug: false))
+    XCTAssertEqual(AppUpdater.debugSwitch("APP_UPDATER_DISABLED", environment: environment, isDebug: true), "1")
+  }
 }

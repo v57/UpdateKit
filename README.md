@@ -84,9 +84,10 @@ Releases are signed by Dev's release (`Minisign.sign(file:secretKey:trustedComme
 
 ## Testing an update locally
 
-Build two versions, zip the newer one next to a `feed.json` that points at it, and run the older one
-with `APP_UPDATER_FEED=file:///path/to/feed.json`. `APP_UPDATER_DISABLED=1` turns the updater off
-(automated runs).
+Build two versions, zip the newer one next to a `feed.json` that points at it, and run the older one, a debug
+build, with `APP_UPDATER_FEED=file:///path/to/feed.json`. `APP_UPDATER_DISABLED=1` turns the updater off
+(automated runs). Release builds ignore both, so nothing that sets the app's environment can switch updates off or
+point them elsewhere.
 
 ## Requirements
 
