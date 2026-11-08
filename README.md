@@ -92,6 +92,16 @@ build, with `APP_UPDATER_FEED=file:///path/to/feed.json`. `APP_UPDATER_DISABLED=
 (automated runs). Release builds ignore both, so nothing that sets the app's environment can switch updates off or
 point them elsewhere.
 
+## Libraries
+
+| Library | Purpose | Platforms | Import |
+|---|---|---|---|
+| [UpdateKit](docs/UpdateKit.md) | Update checks, the update window and menu items, verified download and install | macOS 14; Linux and Windows save signed downloads | `import UpdateKit` |
+
+`.package(url: "https://github.com/v57/UpdateKit.git", branch: "main")`, then
+`.product(name: "UpdateKit", package: "UpdateKit")`. The [developer page](docs/UpdateKit.md) lists the API, what a
+release must contain, and the checks a download goes through.
+
 ## Requirements
 
 macOS 14 or later, Swift 6. The update window is drawn with
