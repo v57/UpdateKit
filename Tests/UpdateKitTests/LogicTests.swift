@@ -239,3 +239,15 @@ extension AppInfo {
       isAppStoreBuild: false)
   }
 }
+
+final class ReleaseNotesTests: XCTestCase {
+  /// Only https links survive in the release notes; the text of the others stays, unlinked.
+  func testOnlyHTTPSLinksOpen() {
+    let notes = ReleaseNotes.attributed(
+      "[site](https://v57.dev) [file](file:///Applications/Calculator.app) [app](x-apple.systempreferences:com.apple.preference.security) [web](http://example.com)"
+    )
+    let links = notes.runs.compactMap(\.link).map(\.absoluteString)
+    XCTAssertEqual(links, ["https://v57.dev"])
+    XCTAssertEqual(String(notes.characters), "site file app web")
+  }
+}

@@ -171,10 +171,21 @@ struct UpdateView: View {
     ByteCountFormatter.string(fromByteCount: count, countStyle: .file)
   }
 
-  private func markdown(_ text: String) -> AttributedString {
-    (try? AttributedString(
-      markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+  private func markdown(_ text: String) -> AttributedString { ReleaseNotes.attributed(text) }
+}
+
+/// Release notes come from whoever can edit the release: their links open only when they are https, so a note
+/// can't open a file, another app's URL scheme or a script.
+enum ReleaseNotes {
+  static func attributed(_ text: String) -> AttributedString {
+    var notes =
+      (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
       ?? AttributedString(text)
+    for run in notes.runs {
+      guard let link = run.link, link.scheme?.lowercased() != "https" else { continue }
+      notes[run.range].link = nil
+    }
+    return notes
   }
 }
 
