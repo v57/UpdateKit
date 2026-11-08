@@ -39,7 +39,7 @@ extension UpdateView {
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 520, height: 200),
       styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: true)
-    window.title = "Software Update"
+    window.title = String(localized: "Software Update")
     // The sheet's header names the phase; its panel ground runs up under the title bar.
     window.titleVisibility = .hidden
     window.titlebarAppearsTransparent = true
@@ -75,7 +75,7 @@ extension UpdateView {
 
     private func makeWindow() -> HostingWindow {
       let updater = self.updater
-      let window = HostingWindow(title: "Software Update", defaultSize: CGSize(width: 520, height: 220)) {
+      let window = HostingWindow(title: String(localized: "Software Update"), defaultSize: CGSize(width: 520, height: 220)) {
         UpdateView.root(updater)
       }
       window.onClose = { [weak updater] in updater?.windowClosed() }

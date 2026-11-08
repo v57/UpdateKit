@@ -25,26 +25,26 @@ struct UpdateView: View {
   private var title: String {
     switch updater.phase {
     case .idle: app.name
-    case .checking: "Checking for updates…"
-    case .upToDate: "You're up to date!"
-    case .updateAvailable: "A new version of \(app.name) is available!"
-    case .downloading(let release, _, _): "Downloading \(app.name) \(release.version)…"
-    case .verifying: "Verifying the update…"
-    case .readyToInstall(let release): "Ready to install \(app.name) \(release.version)"
-    case .installing: "Installing…"
-    case .saved(let release, _): "\(app.name) \(release.version) is downloaded"
-    case .failed(let release, _): release == nil ? "Couldn't check for updates" : "The update failed"
+    case .checking: String(localized: "Checking for updates…")
+    case .upToDate: String(localized: "You're up to date!")
+    case .updateAvailable: String(localized: "A new version of \(app.name) is available!")
+    case .downloading(let release, _, _): String(localized: "Downloading \(app.name) \(release.version)…")
+    case .verifying: String(localized: "Verifying the update…")
+    case .readyToInstall(let release): String(localized: "Ready to install \(app.name) \(release.version)")
+    case .installing: String(localized: "Installing…")
+    case .saved(let release, _): String(localized: "\(app.name) \(release.version) is downloaded")
+    case .failed(let release, _): release == nil ? String(localized: "Couldn't check for updates") : String(localized: "The update failed")
     }
   }
 
   private var meta: String? {
     switch updater.phase {
-    case .upToDate: "\(app.name) \(app.version) is the newest version available."
+    case .upToDate: String(localized: "\(app.name) \(app.version) is the newest version available.")
     case .updateAvailable(let release):
-      "\(app.name) \(release.version) is available — you have \(app.version). \(methodText)"
+      String(localized: "\(app.name) \(release.version) is available — you have \(app.version). \(methodText)")
     case .readyToInstall: readyText
     case .saved(_, let file):
-      "It is in \(file.deletingLastPathComponent().lastPathComponent) as “\(file.lastPathComponent)”. \(installHint)"
+      String(localized: "It is in \(file.deletingLastPathComponent().lastPathComponent) as “\(file.lastPathComponent)”. \(installHint)")
     default: nil
     }
   }
@@ -142,29 +142,29 @@ struct UpdateView: View {
 
   private var installHint: String {
     #if os(macOS)
-      "Quit \(app.name), open the file and move the new \(app.name) to Applications, replacing the old one."
+      String(localized: "Quit \(app.name), open the file and move the new \(app.name) to Applications, replacing the old one.")
     #else
-      "Quit \(app.name), then unpack the file over the folder \(app.name) runs from."
+      String(localized: "Quit \(app.name), then unpack the file over the folder \(app.name) runs from.")
     #endif
   }
 
   private var methodText: String {
     switch updater.installMethod {
     case .replace(let url) where url != app.bundleURL:
-      return "It will be installed in \(url.deletingLastPathComponent().path)."
-    case .replaceAsAdministrator: return "Installing it needs an administrator password."
+      return String(localized: "It will be installed in \(url.deletingLastPathComponent().path).")
+    case .replaceAsAdministrator: return String(localized: "Installing it needs an administrator password.")
     case .saveToFolder(let folder):
-      return "It will be saved to your \(folder.lastPathComponent) folder."
-    case .openInBrowser: return "Your browser will download it."
-    default: return "Would you like to install it now?"
+      return String(localized: "It will be saved to your \(folder.lastPathComponent) folder.")
+    case .openInBrowser: return String(localized: "Your browser will download it.")
+    default: return String(localized: "Would you like to install it now?")
     }
   }
 
   private var readyText: String {
     if case .replaceAsAdministrator = updater.installMethod {
-      return "macOS will ask for an administrator password, then \(app.name) quits and reopens."
+      return String(localized: "macOS will ask for an administrator password, then \(app.name) quits and reopens.")
     }
-    return "\(app.name) will quit and reopen with the new version."
+    return String(localized: "\(app.name) will quit and reopen with the new version.")
   }
 
   private func bytes(_ count: Int64) -> String {

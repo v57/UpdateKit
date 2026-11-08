@@ -313,7 +313,7 @@ import SwiftUI
             newApp = app
             phase = .readyToInstall(release)
           #else
-            phase = .failed(release, message: "This copy can't install updates by itself.")
+            phase = .failed(release, message: String(localized: "This copy can't install updates by itself."))
           #endif
         }
       } catch UpdateError.cancelled {
